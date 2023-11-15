@@ -8,11 +8,61 @@ import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from models import Conv1D, Conv2D, LSTM, INITAL_LSTM
 from tqdm import tqdm
 from glob import glob
 import argparse
 import warnings
+from tensorflow.keras import layers
+from tensorflow.keras.layers import TimeDistributed, LayerNormalization
+from tensorflow.keras.models import Model
+from tensorflow.keras.regularizers import l2
+import kapre
+from kapre.composed import get_melspectrogram_layer
+import tensorflow as tf
+import keras_tuner as kt
+
+def build_model(hp, N_CLASSES, SR, DT):
+
+    n_mels = hp.Int('n_mels', min_value=64, max_value=128, step=64)
+    n_fft = hp.Int('n_fft', min_value=1024, max_value=4096, step=1024)
+    win_length = hp.Int('win_length', min_value=512, max_value=2048, step=512)
+    hop_length = hp.Int('hop_length', min_value=512, max_value=2048, step=512)
+    dropout_rate = hp.Float('dropout_rate', min_value=0.1, max_value=0.5, step=0.1)
+
+    input_shape = (int(SR*DT), 1)
+    i = get_melspectrogram_layer(input_shape=input_shape,
+                                 n_mels=n_mels,
+                                 pad_end=True,
+                                 n_fft=n_fft,
+                                 win_length=win_length,
+                                 hop_length=hop_length,
+                                 sample_rate=SR,
+                                 return_decibel=True,
+                                 input_data_format='channels_last',
+                                 output_data_format='channels_last',
+                                 name='2d_convolution')
+    x = LayerNormalization(axis=2, name='batch_norm')(i.output)
+    x = TimeDistributed(layers.Reshape((-1,)), name='reshape')(x)
+    s = TimeDistributed(layers.Dense(64, activation='tanh'),
+                        name='td_dense_tanh')(x)
+    x = layers.Bidirectional(layers.LSTM(32, return_sequences=True, kernel_regularizer=l2(0.005)),
+                             name='bidirectional_lstm')(s)
+    x = layers.concatenate([s, x], axis=2, name='skip_connection')
+    x = layers.Dense(64, activation='relu', name='dense_1_relu')(x)
+    x = layers.MaxPooling1D(name='max_pool_1d')(x)
+    x = layers.Dense(32, activation='relu', name='dense_2_relu')(x)
+    x = layers.Flatten(name='flatten')(x)
+    x = layers.Dropout(rate=dropout_rate, name='dropout')(x)
+    x = layers.Dense(32, activation='relu',
+                         activity_regularizer=l2(0.005),
+                         name='dense_3_relu')(x)
+    o = layers.Dense(N_CLASSES, activation='softmax', name='softmax')(x)
+    model = Model(inputs=i.input, outputs=o, name='long_short_term_memory')
+    model.compile(optimizer='nadam',
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+
+    return model
 
 
 class DataGenerator(tf.keras.utils.Sequence):
@@ -65,11 +115,7 @@ def train(args):
     params = {'N_CLASSES':len(os.listdir(args.src_root)),
               'SR':sr,
               'DT':dt}
-    models = {'conv1d':Conv1D(**params),
-              'conv2d':Conv2D(**params),
-              'initlstm':INITAL_LSTM(**params),
-              'lstm':  LSTM(**params)}
-    assert model_type in models.keys(), '{} not an available model'.format(model_type)
+    
     csv_path = os.path.join('logs', '{}_history.csv'.format(model_type))
 
     wav_paths = glob('{}/**'.format(src_root), recursive=True)
@@ -97,16 +143,24 @@ def train(args):
                        params['N_CLASSES'], batch_size=batch_size)
     vg = DataGenerator(wav_val, label_val, sr, dt,
                        params['N_CLASSES'], batch_size=batch_size)
-    model = models[model_type]
-    cp = ModelCheckpoint('models/{}.h5'.format(model_type), monitor='val_loss',
-                         save_best_only=True, save_weights_only=False,
-                         mode='auto', save_freq='epoch', verbose=1)
-    csv_logger = CSVLogger(csv_path, append=False)
-    model.fit(tg, validation_data=vg,
-              epochs=80, verbose=1,
-              callbacks=[csv_logger, cp])
+
+    tuner = kt.RandomSearch(
+        lambda hp: build_model(hp, **params),
+        objective='val_accuracy',
+        max_trials=5,  # Anzahl der zu testenden Kombinationen
+        executions_per_trial=3,  # Wie oft jede Kombination getestet wird
+        directory='hyperpara_tunining',
+        project_name='audio_classification'
+    )
+
+    # Starten Sie die Suche
+    tuner.search(tg, validation_data=vg, epochs=10, batch_size=32)
+
+    # Ergebnisse ausgeben
+    tuner.results_summary()
     
-    
+
+
 
 if __name__ == '__main__':
 
@@ -124,4 +178,6 @@ if __name__ == '__main__':
     args, _ = parser.parse_known_args()
 
     train(args)
+
+
 

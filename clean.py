@@ -8,6 +8,19 @@ import pandas as pd
 from librosa.core import resample, to_mono
 from tqdm import tqdm
 import wavio
+import librosa
+from scipy.signal import butter, filtfilt
+
+def butter_highpass(cutoff, fs, order=5):
+    nyquist = 0.5 * fs
+    normal_cutoff = cutoff / nyquist
+    b, a = butter(order, normal_cutoff, btype='high', analog=False)
+    return b, a
+
+def highpass_filter(data, cutoff, fs, order=5):
+    b, a = butter_highpass(cutoff, fs, order=order)
+    y = filtfilt(b, a, data)
+    return y
 
 
 def envelope(y, rate, threshold):
@@ -24,23 +37,53 @@ def envelope(y, rate, threshold):
     return mask, y_mean
 
 
+# def downsample_mono(path, sr):
+#     obj = wavio.read(path)
+#     wav = obj.data.astype(np.float32, order='F')
+#     rate = obj.rate
+#     try:
+#         channel = wav.shape[1]
+#         if channel == 2:
+#             wav = to_mono(wav.T)
+#         elif channel == 1:
+#             wav = to_mono(wav.reshape(-1))
+#     except IndexError:
+#         wav = to_mono(wav.reshape(-1))
+#         pass
+#     except Exception as exc:
+#         raise exc
+#     wav = resample(wav, rate, sr)
+#     wav = wav.astype(np.int16)
+#     return sr, wav
+
+
 def downsample_mono(path, sr):
-    obj = wavio.read(path)
-    wav = obj.data.astype(np.float32, order='F')
-    rate = obj.rate
     try:
-        channel = wav.shape[1]
-        if channel == 2:
-            wav = to_mono(wav.T)
-        elif channel == 1:
-            wav = to_mono(wav.reshape(-1))
-    except IndexError:
-        wav = to_mono(wav.reshape(-1))
-        pass
-    except Exception as exc:
-        raise exc
-    wav = resample(wav, rate, sr)
-    wav = wav.astype(np.int16)
+        # Laden der Audio-Datei und Rückgabe der Wellenform und der Abtastrate
+        wav, rate = librosa.load(path, sr=None, mono=False)
+        
+        # Konvertieren zu Mono, wenn es sich um eine Stereodatei handelt
+        if len(wav.shape) > 1 and wav.shape[0] == 2:
+            wav = librosa.to_mono(wav)
+    except Exception as e:
+        print(f"Fehler beim Laden der Audio-Datei oder Konvertieren in Mono: {e}")
+        return None, None  # Rückgabe von None-Werten, wenn ein Fehler auftritt
+    
+    try:
+        # Resampling der Wellenform zur gewünschten Abtastrate
+        if rate != sr:
+            wav = librosa.resample(wav, rate, sr)
+    except Exception as e:
+        print(f"Fehler beim Resampling: {e}")
+        return None, None  # Rückgabe von None-Werten, wenn ein Fehler auftritt
+
+    #AUSKOMENTIEREN Für HighPass Filter
+    #cutoff_frequency = 800.0  # Grenzfrequenz, Sie können diesen Wert nach Bedarf ändern
+    #wav = highpass_filter(wav, cutoff_frequency, sr)
+
+    # Konvertieren der Wellenform zu np.int16
+    wav = (wav * 32767).astype(np.int16)
+
     return sr, wav
 
 
@@ -71,12 +114,18 @@ def split_wavs(args):
         target_dir = os.path.join(dst_root, _cls)
         check_dir(target_dir)
         src_dir = os.path.join(src_root, _cls)
+        if not os.path.isdir(src_dir):  # Überprüfen, ob src_dir ein Verzeichnis ist
+            continue  # Wenn nicht, überspringen und mit dem nächsten _cls fortfahren
         for fn in tqdm(os.listdir(src_dir)):
             src_fn = os.path.join(src_dir, fn)
-            rate, wav = downsample_mono(src_fn, args.sr)
-            mask, y_mean = envelope(wav, rate, threshold=args.threshold)
-            wav = wav[mask]
-            delta_sample = int(dt*rate)
+            if fn.endswith('.wav'):
+                rate, wav = downsample_mono(src_fn, args.sr)
+                if rate is None or wav is None:
+                    print(f'Fehler beim Verarbeiten der Datei: {src_fn}, Datei wird übersprungen.')
+                    continue  # Überspringen der aktuellen Datei und Fortfahren mit der nächsten Datei
+                mask, y_mean = envelope(wav, rate, threshold=args.threshold)
+                wav = wav[mask]
+                delta_sample = int(dt*rate)
 
             # cleaned audio is less than a single sample
             # pad with zeros to delta_sample size
@@ -93,6 +142,7 @@ def split_wavs(args):
                     stop = int(i + delta_sample)
                     sample = wav[start:stop]
                     save_sample(sample, rate, target_dir, fn, cnt)
+
 
 
 def test_threshold(args):
@@ -121,12 +171,12 @@ if __name__ == '__main__':
                         help='directory of audio files in total duration')
     parser.add_argument('--dst_root', type=str, default='clean',
                         help='directory to put audio files split by delta_time')
-    parser.add_argument('--delta_time', '-dt', type=float, default=1.0,
+    parser.add_argument('--delta_time', '-dt', type=float, default=3.0,
                         help='time in seconds to sample audio')
     parser.add_argument('--sr', type=int, default=16000,
                         help='rate to downsample audio')
 
-    parser.add_argument('--fn', type=str, default='3a3d0279',
+    parser.add_argument('--fn', type=str, default='ls01_20230518_110000_s_53_0',
                         help='file to plot over time to check magnitude')
     parser.add_argument('--threshold', type=str, default=20,
                         help='threshold magnitude for np.int16 dtype')

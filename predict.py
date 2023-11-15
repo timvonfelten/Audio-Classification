@@ -25,6 +25,8 @@ def make_prediction(args):
     y_true = le.fit_transform(labels)
     results = []
 
+    stats_df = pd.DataFrame(columns=['Filename', 'Actual Class', 'Predicted Class', 'Confidence'])
+
     for z, wav_fn in tqdm(enumerate(wav_paths), total=len(wav_paths)):
         rate, wav = downsample_mono(wav_fn, args.sr)
         mask, env = envelope(wav, rate, threshold=args.threshold)
@@ -46,13 +48,22 @@ def make_prediction(args):
         y_pred = np.argmax(y_mean)
         real_class = os.path.dirname(wav_fn).split('/')[-1]
         print('Actual class: {}, Predicted class: {}'.format(real_class, classes[y_pred]))
+        filename = os.path.basename(wav_fn)
+        stats_df = stats_df.append({
+            'Filename': filename,
+            'Actual Class': real_class,
+            'Predicted Class': classes[y_pred],
+            'Confidence': y_mean[y_pred]
+        }, ignore_index=True)
+
         results.append(y_mean)
 
     np.save(os.path.join('logs', args.pred_fn), np.array(results))
 
+    stats_df.to_csv(os.path.join('logs', 'stats.csv'), index=False)
+
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser(description='Audio Classification Training')
     parser.add_argument('--model_fn', type=str, default='models/lstm.h5',
                         help='model file to make predictions')
@@ -60,7 +71,7 @@ if __name__ == '__main__':
                         help='fn to write predictions in logs dir')
     parser.add_argument('--src_dir', type=str, default='wavfiles',
                         help='directory containing wavfiles to predict')
-    parser.add_argument('--dt', type=float, default=1.0,
+    parser.add_argument('--dt', type=float, default=3.0,
                         help='time in seconds to sample audio')
     parser.add_argument('--sr', type=int, default=16000,
                         help='sample rate of clean audio')
