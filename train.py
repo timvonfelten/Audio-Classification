@@ -103,7 +103,7 @@ def train(args):
                          mode='auto', save_freq='epoch', verbose=1)
     csv_logger = CSVLogger(csv_path, append=False)
     model.fit(tg, validation_data=vg,
-              epochs=80, verbose=1,
+              epochs=50, verbose=1,
               callbacks=[csv_logger, cp])
     
     
@@ -115,7 +115,7 @@ if __name__ == '__main__':
                         help='model to run. i.e. conv1d, conv2d, lstm')
     parser.add_argument('--src_root', type=str, default='clean',
                         help='directory of audio files in total duration')
-    parser.add_argument('--batch_size', type=int, default=8,
+    parser.add_argument('--batch_size', type=int, default=48,
                         help='batch size')
     parser.add_argument('--delta_time', '-dt', type=float, default=3.0,
                         help='time in seconds to sample audio')

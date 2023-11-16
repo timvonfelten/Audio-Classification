@@ -11,11 +11,11 @@ import os
 def Conv1D(N_CLASSES=2, SR=16000, DT=3.0):
     input_shape = (int(SR*DT), 1)
     i = get_melspectrogram_layer(input_shape=input_shape,
-                                 n_mels=512,
+                                 n_mels=256,
                                  pad_end=True,
-                                 n_fft=512,
-                                 win_length=800,
-                                 hop_length=160,
+                                 n_fft=2048,
+                                 win_length=1200,
+                                 hop_length=1000,
                                  sample_rate=SR,
                                  return_decibel=True,
                                  input_data_format='channels_last',
@@ -31,7 +31,7 @@ def Conv1D(N_CLASSES=2, SR=16000, DT=3.0):
     x = layers.MaxPooling2D(pool_size=(2,2), name='max_pool_2d_4')(x)
     x = TimeDistributed(layers.Conv1D(128, kernel_size=(4), activation='relu'), name='td_conv_1d_relu_4')(x)
     x = layers.GlobalMaxPooling2D(name='global_max_pooling_2d')(x)
-    x = layers.Dropout(rate=0.5, name='dropout')(x)
+    x = layers.Dropout(rate=0.8, name='dropout')(x)
     x = layers.Dense(64, activation='relu', activity_regularizer=l2(0.001), name='dense')(x)
     o = layers.Dense(N_CLASSES, activation='softmax', name='softmax')(x)
     model = Model(inputs=i.input, outputs=o, name='1d_convolution')

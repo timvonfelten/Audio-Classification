@@ -1,49 +1,45 @@
-import matplotlib.pyplot as plt
-import numpy as np
 from pymongo import MongoClient
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-# Verbindung zur MongoDB herstellen
-client = MongoClient('mongodb://localhost:27017/')
-db = client['audio_classification']
-collection = db['audio_data']
+# MongoDB-Verbindungsinformationen
+client = MongoClient("mongodb://localhost:27017/") # Passen Sie dies an Ihre MongoDB-Instanz an
+db = client["ClassifiedAudioSNP"] # Datenbankname
+collection = db["aggregated_files_per_day"] # Sammlungsname
 
-# Daten extrahieren
-documents = list(collection.find({}, {'_id': 0, 'Classifications': 1, 'Dateiname': 1}))
+# Daten für ein bestimmtes Datum abrufen
+date_to_retrieve = "2023-09-12"
+query = {"Date": date_to_retrieve}
+document = collection.find_one(query)
 
-# Für jedes Dokument in Ihren Dokumenten
-for doc in documents:
-    classifications = doc['Classifications']
-    time_stamps = [c['Time'] for c in classifications]
-    class_binary = np.array([c['ClassBinary'] for c in classifications]).T
-    confidences = np.array([c['Confidences'] for c in classifications]).T
-    rms_energy = np.array([float(c['RMS-Energy']) for c in classifications])
+# Überprüfen, ob Dokument vorhanden ist
+if document:
+    # Umwandeln der Stundeninformationen in einen DataFrame
+    hours_info = pd.DataFrame(document["hours_info"])
+    hours_info["Time"] = pd.to_datetime(hours_info["Time"]).dt.time
 
-    # Farbkodierung für die kombinierte Heatmap berechnen
-    colors = np.zeros((class_binary.shape[0], class_binary.shape[1], 3))
-    for i in range(class_binary.shape[0]):
-        for j in range(class_binary.shape[1]):
-            if class_binary[i, j] == 1:
-                colors[i, j] = [confidences[i, j], 0, 0]  # Rot mit Sättigung entsprechend der Confidence
-            else:
-                colors[i, j] = [0, confidences[i, j], 0]  # Grün mit Sättigung entsprechend der Confidence
+    # Umwandeln von verschachtelten Strukturen in der Spalte average_RMS_dB in numerische Werte
+    def convert_to_numeric(value):
+        if isinstance(value, dict) and "$numberDouble" in value:
+            return float('nan') if value["$numberDouble"] == "NaN" else float(value["$numberDouble"])
+        return value
 
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+    hours_info["average_RMS_dB"] = hours_info["average_RMS_dB"].apply(convert_to_numeric)
 
-    # Kombinierte Heatmap für Klassifikation und Confidence
-    ax1.imshow(colors, interpolation='nearest', aspect='auto')
-    ax1.set_title(f'Kombinierte Klassifikations- und Confidence-Heatmap für {doc["Dateiname"]}')
-    ax1.set_xlabel('Zeit')
-    ax1.set_ylabel('Kategorie')
-    ax1.set_yticks(range(class_binary.shape[0]))
-    ax1.set_yticklabels(['Vogel', 'Lärm', 'Natur', 'Stille'])
-    ax1.set_xticks(range(class_binary.shape[1]))
-    ax1.set_xticklabels(time_stamps, rotation=90)
+    # Behandeln von NaN-Werten in der Spalte average_RMS_dB
+    hours_info["average_RMS_dB"].fillna(0, inplace=True)
 
-    # Zweite Y-Achse für das Liniendiagramm der RMS Energie
-    ax2 = ax1.twinx()
-    ax2.plot(rms_energy, label='RMS Energie', color='blue')
-    ax2.set_ylabel('RMS Energie')
-    ax2.legend(loc='upper right')
+    # Umstrukturierung des DataFrames für die Heatmap
+    heatmap_data = hours_info.set_index("Time").T
 
-    plt.tight_layout()
+    # Heatmap erstellen
+    plt.figure(figsize=(15, 5))
+    sns.heatmap(heatmap_data, annot=False, fmt=".1f", cmap="viridis")
+    plt.title(f"Heatmap der Klassen und average_RMS_dB am {date_to_retrieve}")
+    plt.xlabel('Uhrzeit')
+    plt.ylabel('Klasse / average_RMS_dB')
     plt.show()
+
+else:
+    print(f"Keine Daten für das Datum {date_to_retrieve} gefunden.")
