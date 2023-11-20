@@ -28,9 +28,9 @@ def build_model(hp, N_CLASSES, SR, DT):
 
     n_mels = hp.Int('n_mels', min_value=64, max_value=128, step=64)
     n_fft = hp.Int('n_fft', min_value=1024, max_value=4096, step=1024)
-    win_length = hp.Int('win_length', min_value=512, max_value=2048, step=512)
-    hop_length = hp.Int('hop_length', min_value=512, max_value=2048, step=512)
-    dropout_rate = hp.Float('dropout_rate', min_value=0.1, max_value=0.5, step=0.1)
+    win_length = hp.Int('win_length', min_value=256, max_value=2048, step=256)
+    hop_length = hp.Int('hop_length', min_value=128, max_value=2048, step=128)
+    dropout_rate = hp.Float('dropout_rate', min_value=0.1, max_value=0.8, step=0.1)
     
 
     input_shape = (int(SR*DT), 1)
@@ -146,14 +146,14 @@ def train(args):
     tuner = kt.RandomSearch(
         lambda hp: build_model(hp, **params),
         objective='val_accuracy',
-        max_trials=5,
-        executions_per_trial=3,
-        directory='hyperpara_tunining',
+        max_trials=10,
+        executions_per_trial=2,
+        directory='hyperpara_tunining_conv2D_T2',
         project_name='audio_classification',
         hyperparameters=hp
     )
 
-    hp.Int('batch_size', min_value=8, max_value=64, step=8)
+    hp.Int('batch_size', min_value=8, max_value=128, step=8)
 
 
     tg = DataGenerator(wav_train, label_train, sr, dt, params['N_CLASSES'], batch_size=batch_size)

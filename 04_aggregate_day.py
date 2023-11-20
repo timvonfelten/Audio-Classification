@@ -8,7 +8,7 @@ collection = db["aggregated_files"]  # Verwenden Sie die 'aggregated_files' Koll
 pipeline = [
     {
         "$group": {
-            "_id": {"Date": "$Date", "Place": "$Place"},
+            "_id": {"Date": "$Date", "Place": "$Place", "Weekday": "$Weekday"},
             "hours_info": {
                 "$push": {
                     "Time": "$Time",
@@ -16,7 +16,7 @@ pipeline = [
                     "vogel_count": "$vogel_count",
                     "laerm_count": "$laerm_count",
                     "natur_count": "$natur_count",
-                    "average_RMS_dB": "$average_RMS_dB"  # Verwenden Sie den Durchschnittswert von RMS_dB
+                    "average_RMS_dB": "$average_RMS_dB"
                 }
             }
         }
@@ -35,6 +35,7 @@ pipeline = [
         "$project": {
             "_id": 0,
             "Date": "$_id.Date",
+            "Weekday": "$_id.Weekday",
             "Place": "$_id.Place",
             "hours_info": "$hours_info"
         }

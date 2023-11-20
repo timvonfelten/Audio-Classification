@@ -4,7 +4,7 @@ from datetime import datetime
 # MongoDB Verbindung einrichten
 client = MongoClient("mongodb://localhost:27017/")  # Ersetzen Sie dies durch Ihre MongoDB-Verbindungsinformationen
 db = client["ClassifiedAudioSNP"]
-collection = db["audio_classification"]
+collection = db["audio_classification_test"]
 
 
 

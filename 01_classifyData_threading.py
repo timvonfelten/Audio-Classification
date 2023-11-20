@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 # MongoDB Verbindung einrichten
 client = MongoClient("mongodb://localhost:27017/")
 db = client["ClassifiedAudioSNP"]
-collection = db["audio_classification_test"]
+collection = db["audio_classification"]
 
 def calculate_average_rms_db(audio_segment):
     # Berechnung des Durchschnitts des quadratischen Mittelwerts (Root Mean Square, RMS) für das gesamte Fenster
@@ -74,6 +74,8 @@ def process_file(filename):
     # Aufteilen des Audios und Klassifizierung
     for i in range(0, clean_wav.shape[0] - window + 1, step):
         sample = clean_wav[i:i+window]
+        sample = sample.astype(np.int32)
+        average_rms_db = calculate_average_rms_db(sample)
         sample = sample.reshape(-1, 1)
         X_batch = np.array([sample], dtype=np.float32)
         
@@ -89,8 +91,6 @@ def process_file(filename):
                 'Predicted Class': predicted_label,
                 'Confidence': confidence_rounded
             }
-        
-        average_rms_db = calculate_average_rms_db(sample)
 
         classification_result = {
             'Filename': os.path.basename(audio_file_path),
@@ -124,7 +124,7 @@ def process_file(filename):
 
     print("Klassifikationsergebnisse wurden erfolgreich in die MongoDB geschrieben.")
 
-max_threads = 8
+max_threads = 16
 
 with ThreadPoolExecutor(max_workers=max_threads) as executor:
     for filename in os.listdir(directory_path):

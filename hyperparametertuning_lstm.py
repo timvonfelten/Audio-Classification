@@ -20,32 +20,36 @@ import kapre
 from kapre.composed import get_melspectrogram_layer
 import tensorflow as tf
 import keras_tuner as kt
+from tensorflow.keras.callbacks import TensorBoard
+import datetime
+from keras_tuner import HyperParameters
 
 def build_model(hp, N_CLASSES, SR, DT):
 
-    n_mels = hp.Int('n_mels', min_value=64, max_value=128, step=64)
-    n_fft = hp.Int('n_fft', min_value=1024, max_value=4096, step=1024)
-    win_length = hp.Int('win_length', min_value=512, max_value=2048, step=512)
-    hop_length = hp.Int('hop_length', min_value=512, max_value=2048, step=512)
-    dropout_rate = hp.Float('dropout_rate', min_value=0.1, max_value=0.5, step=0.1)
+    n_mels = hp.Int('n_mels', min_value=32, max_value=64, step=32)
+    n_fft = hp.Int('n_fft', min_value=1536, max_value=2560, step=512)
+    win_length = hp.Int('win_length', min_value=256, max_value=2048, step=256)
+    hop_length = hp.Int('hop_length', min_value=128, max_value=2048, step=128)
+    dropout_rate = hp.Float('dropout_rate', min_value=0.1, max_value=0.4, step=0.1)
+    activity_regularizer = hp.Float('activity_regularizer', min_value=0.001, max_value=0.005, step=0.001)
 
     input_shape = (int(SR*DT), 1)
     i = get_melspectrogram_layer(input_shape=input_shape,
-                                 n_mels=n_mels,
-                                 pad_end=True,
-                                 n_fft=n_fft,
-                                 win_length=win_length,
-                                 hop_length=hop_length,
-                                 sample_rate=SR,
-                                 return_decibel=True,
-                                 input_data_format='channels_last',
-                                 output_data_format='channels_last',
-                                 name='2d_convolution')
+                                     n_mels=n_mels,
+                                     pad_end=True,
+                                     n_fft=n_fft,
+                                     win_length=win_length,
+                                     hop_length=hop_length,
+                                     sample_rate=SR,
+                                     return_decibel=True,
+                                     input_data_format='channels_last',
+                                     output_data_format='channels_last',
+                                     name='2d_convolution')
     x = LayerNormalization(axis=2, name='batch_norm')(i.output)
     x = TimeDistributed(layers.Reshape((-1,)), name='reshape')(x)
     s = TimeDistributed(layers.Dense(64, activation='tanh'),
                         name='td_dense_tanh')(x)
-    x = layers.Bidirectional(layers.LSTM(32, return_sequences=True, kernel_regularizer=l2(0.005)),
+    x = layers.Bidirectional(layers.LSTM(32, return_sequences=True, kernel_regularizer=l2(activity_regularizer)),
                              name='bidirectional_lstm')(s)
     x = layers.concatenate([s, x], axis=2, name='skip_connection')
     x = layers.Dense(64, activation='relu', name='dense_1_relu')(x)
@@ -54,11 +58,11 @@ def build_model(hp, N_CLASSES, SR, DT):
     x = layers.Flatten(name='flatten')(x)
     x = layers.Dropout(rate=dropout_rate, name='dropout')(x)
     x = layers.Dense(32, activation='relu',
-                         activity_regularizer=l2(0.005),
+                         activity_regularizer=l2(activity_regularizer),
                          name='dense_3_relu')(x)
     o = layers.Dense(N_CLASSES, activation='softmax', name='softmax')(x)
     model = Model(inputs=i.input, outputs=o, name='long_short_term_memory')
-    model.compile(optimizer='nadam',
+    model.compile(optimizer='adam',
                   loss='categorical_crossentropy',
                   metrics=['accuracy'])
 
@@ -139,22 +143,32 @@ def train(args):
     if len(set(label_val)) != params['N_CLASSES']:
         warnings.warn('Found {}/{} classes in validation data. Increase data size or change random_state.'.format(len(set(label_val)), params['N_CLASSES']))
 
-    tg = DataGenerator(wav_train, label_train, sr, dt,
-                       params['N_CLASSES'], batch_size=batch_size)
-    vg = DataGenerator(wav_val, label_val, sr, dt,
-                       params['N_CLASSES'], batch_size=batch_size)
+    log_dir = os.path.join("logs", "fit", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
+    hp = HyperParameters()
     tuner = kt.RandomSearch(
         lambda hp: build_model(hp, **params),
         objective='val_accuracy',
-        max_trials=5,  # Anzahl der zu testenden Kombinationen
-        executions_per_trial=3,  # Wie oft jede Kombination getestet wird
-        directory='hyperpara_tunining',
-        project_name='audio_classification'
+        max_trials=10,
+        executions_per_trial=2,
+        directory='hyperpara_tunining_lstm_T2',
+        project_name='audio_classification',
+        hyperparameters=hp
     )
 
-    # Starten Sie die Suche
-    tuner.search(tg, validation_data=vg, epochs=10, batch_size=32)
+    hp.Int('batch_size', min_value=8, max_value=256, step=8)
+
+
+    tg = DataGenerator(wav_train, label_train, sr, dt, params['N_CLASSES'], batch_size=batch_size)
+    vg = DataGenerator(wav_val, label_val, sr, dt, params['N_CLASSES'], batch_size=batch_size)
+
+    tuner.search(tg, validation_data=vg, epochs=10, callbacks=[tensorboard_callback])
+
+    # Ergebnisse ausgeben und beste Hyperparameter abrufen
+    best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
+    best_batch_size = best_hps.get('batch_size')
+    model = build_model(best_hps, **params)
 
     # Ergebnisse ausgeben
     tuner.results_summary()

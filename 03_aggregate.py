@@ -3,7 +3,7 @@ from pymongo import MongoClient
 # MongoDB Verbindung einrichten
 client = MongoClient("mongodb://localhost:27017/")
 db = client["ClassifiedAudioSNP"]
-collection = db["audio_classification"]
+collection = db["audio_classification_test"]
 aggregated_collection = db["aggregated_files"]  # Neue Kollektion für aggregierte Daten
 
 confidence_threshold = 0.9  # Ihr Schwellenwert
@@ -47,7 +47,7 @@ pipeline = [
         "Place": {"$first": "$additional_info.Place"}
     }}
 ]
-H
+
 aggregated_results = collection.aggregate(pipeline)
 
 # Speichern Sie die Ergebnisse in der neuen Kollektion

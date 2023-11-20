@@ -78,11 +78,11 @@ def Conv1D_91(N_CLASSES=2, SR=16000, DT=3.0):
 def Conv2D(N_CLASSES=2, SR=16000, DT=3.0):
     input_shape = (int(SR*DT), 1)
     i = get_melspectrogram_layer(input_shape=input_shape,
-                                 n_mels=256,
+                                 n_mels=128,
                                  pad_end=True,
-                                 n_fft=512,
-                                 win_length=800,
-                                 hop_length=160,
+                                 n_fft=4096,
+                                 win_length=768,
+                                 hop_length=128,
                                  sample_rate=SR,
                                  return_decibel=True,
                                  input_data_format='channels_last',
@@ -98,7 +98,7 @@ def Conv2D(N_CLASSES=2, SR=16000, DT=3.0):
     x = layers.MaxPooling2D(pool_size=(2,2), padding='same', name='max_pool_2d_4')(x)
     x = layers.Conv2D(32, kernel_size=(3,3), activation='relu', padding='same', name='conv2d_relu_4')(x)
     x = layers.Flatten(name='flatten')(x)
-    x = layers.Dropout(rate=0.5, name='dropout')(x)
+    x = layers.Dropout(rate=0.6, name='dropout')(x)
     x = layers.Dense(64, activation='relu', activity_regularizer=l2(0.001), name='dense')(x)
     o = layers.Dense(N_CLASSES, activation='softmax', name='softmax')(x)
     model = Model(inputs=i.input, outputs=o, name='2d_convolution')
@@ -111,11 +111,11 @@ def Conv2D(N_CLASSES=2, SR=16000, DT=3.0):
 def LSTM(N_CLASSES=2, SR=16000, DT=3.0):
     input_shape = (int(SR*DT), 1)
     i = get_melspectrogram_layer(input_shape=input_shape,
-                                     n_mels=1024,
+                                     n_mels=32,
                                      pad_end=True,
-                                     n_fft=2048,
-                                     win_length=2018,
-                                     hop_length=1024,
+                                     n_fft=2560,
+                                     win_length=2048,
+                                     hop_length=896,
                                      sample_rate=SR,
                                      return_decibel=True,
                                      input_data_format='channels_last',
@@ -125,20 +125,20 @@ def LSTM(N_CLASSES=2, SR=16000, DT=3.0):
     x = TimeDistributed(layers.Reshape((-1,)), name='reshape')(x)
     s = TimeDistributed(layers.Dense(64, activation='tanh'),
                         name='td_dense_tanh')(x)
-    x = layers.Bidirectional(layers.LSTM(32, return_sequences=True, kernel_regularizer=l2(0.005)),
+    x = layers.Bidirectional(layers.LSTM(32, return_sequences=True, kernel_regularizer=l2(0.001)),
                              name='bidirectional_lstm')(s)
     x = layers.concatenate([s, x], axis=2, name='skip_connection')
     x = layers.Dense(64, activation='relu', name='dense_1_relu')(x)
     x = layers.MaxPooling1D(name='max_pool_1d')(x)
     x = layers.Dense(32, activation='relu', name='dense_2_relu')(x)
     x = layers.Flatten(name='flatten')(x)
-    x = layers.Dropout(rate=0.5, name='dropout')(x)
+    x = layers.Dropout(rate=0.4, name='dropout')(x)
     x = layers.Dense(32, activation='relu',
-                         activity_regularizer=l2(0.005),
+                         activity_regularizer=l2(0.001),
                          name='dense_3_relu')(x)
     o = layers.Dense(N_CLASSES, activation='softmax', name='softmax')(x)
     model = Model(inputs=i.input, outputs=o, name='long_short_term_memory')
-    model.compile(optimizer='nadam',
+    model.compile(optimizer='adam',
                   loss='categorical_crossentropy',
                   metrics=['accuracy'])
 

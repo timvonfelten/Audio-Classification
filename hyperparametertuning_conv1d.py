@@ -32,6 +32,7 @@ def build_model(hp, N_CLASSES, SR, DT):
     hop_length = hp.Int('hop_length', min_value=400, max_value=2400, step=200)
     dropout_rate = hp.Float('dropout_rate', min_value=0.1, max_value=0.8, step=0.1)
     
+    
 
     input_shape = (int(SR*DT), 1)
     i = get_melspectrogram_layer(input_shape=input_shape,
